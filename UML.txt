@@ -1,0 +1,38 @@
+UML SIMPLIFICADO - STOCKFLOW
+
+DatabaseManager
+- connect()
+- initialize_database()
+- verify_user()
+- list_products()
+- get_product()
+- create_product()
+- update_product()
+- delete_product()
+- add_movement()
+- dashboard_stats()
+
+LoginWindow
+- build()
+- login()
+
+MainWindow
+- build_shell()
+- show_dashboard()
+- show_products()
+- show_movements()
+- open_product_form()
+- edit_selected_product()
+- delete_selected_product()
+- close()
+
+Logger
+- configurar()
+- registrar()
+
+Relacionamentos principais:
+MainWindow -> DatabaseManager
+LoginWindow -> DatabaseManager
+DatabaseManager -> MySQL
+MainWindow -> Logger
+LoginWindow -> Logger
