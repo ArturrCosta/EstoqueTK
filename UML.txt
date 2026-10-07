@@ -1,38 +1,69 @@
 UML SIMPLIFICADO - STOCKFLOW
 
 DatabaseManager
-- connect()
-- initialize_database()
-- verify_user()
-- list_products()
-- get_product()
-- create_product()
-- update_product()
-- delete_product()
-- add_movement()
-- dashboard_stats()
+- config
++ connect()
++ initialize_database()
++ verify_user()
++ list_products()
++ get_product()
++ create_product()
++ update_product()
++ delete_product()
++ list_categories()
++ list_movements()
++ dashboard_stats()
 
 LoginWindow
-- build()
-- login()
+- root
+- database
++ build()
++ login()
 
 MainWindow
-- build_shell()
-- show_dashboard()
-- show_products()
-- show_movements()
-- open_product_form()
-- edit_selected_product()
-- delete_selected_product()
-- close()
+- root
+- database
++ build_shell()
++ show_dashboard()
++ show_products()
++ show_movements()
++ open_product_form()
++ edit_selected_product()
++ delete_selected_product()
++ close()
 
 Logger
-- configurar()
-- registrar()
++ configurar()
++ registrar()
 
-Relacionamentos principais:
-MainWindow -> DatabaseManager
+RELACIONAMENTOS
+
+main.py -> DatabaseManager
+main.py -> LoginWindow
 LoginWindow -> DatabaseManager
-DatabaseManager -> MySQL
-MainWindow -> Logger
 LoginWindow -> Logger
+MainWindow -> DatabaseManager
+MainWindow -> Logger
+DatabaseManager -> MySQL
+
+BANCO
+
+usuarios
+  id (PK)
+  usuario
+  senha
+
+produtos
+  id (PK)
+  nome
+  categoria
+  quantidade
+  preco
+  estoque_minimo
+
+movimentacoes
+  id (PK)
+  produto_id (FK -> produtos.id)
+  tipo
+  quantidade
+  data_hora

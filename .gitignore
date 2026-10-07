@@ -1,10 +1,6 @@
-# Ambientes virtuais
-venv/
 .venv/
-env/
-
-# Cache do Python
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
+.vscode/
+.idea/
+Thumbs.db
