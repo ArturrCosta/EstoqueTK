@@ -5,6 +5,9 @@ Protótipo desktop em Python + Tkinter + MySQL desenvolvido para o trabalho de A
 ## Requisitos atendidos
 
 - Janela de login e janela principal.
+- Cadastro de novas contas pela tela de login.
+- Estoque e historico de movimentacoes separados por conta autenticada.
+- Botão **Sair da conta** retorna ao login sem encerrar a aplicação.
 - CRUD completo de produtos.
 - MySQL para persistência.
 - Registro automatico de movimentacoes ao cadastrar, editar ou excluir produtos.
@@ -50,9 +53,9 @@ DB_CONFIG = {
 
 Altere apenas os dados necessários para seu MySQL.
 
-O programa cria automaticamente o banco `estoque_db`, as três tabelas e alguns registros iniciais.
+O programa cria automaticamente o banco `estoque_db`, as tabelas e faz a migracao de bancos antigos. Os produtos e historicos existentes antes desta versao sao associados ao `admin`, preservando os dados ja cadastrados.
 
-Também existe `banco.sql` para executar manualmente no phpMyAdmin/MySQL Workbench.
+O arquivo `banco.sql` descreve a estrutura atual para uma instalacao nova e inclui produtos de exemplo para o `admin`. Em uma base ja existente, abra o programa para que `initialize_database()` aplique a migracao automaticamente; faca um backup antes de migrar.
 
 ## 3. Executar
 
@@ -65,20 +68,31 @@ Login inicial:
 - usuário: `admin`
 - senha: `admin123`
 
+Na tela de login, use **Criar outra conta** para cadastrar um usuário adicional. O nome deve ter de 3 a 50 caracteres e usar letras sem acento, números, ponto, hífen ou sublinhado. A senha deve ter pelo menos 8 caracteres e precisa ser confirmada. Os nomes de usuário não podem se repetir. Todas as contas cadastradas têm as mesmas permissões neste protótipo.
+
+Cada conta possui seu próprio conjunto de produtos e movimentações. Uma conta nova começa com o estoque vazio: ela não vê, altera nem exclui os produtos do `admin` ou de outra conta. O nome de um produto deve ser único dentro da mesma conta, mas contas diferentes podem usar o mesmo nome.
+
+A coluna `id` do MySQL é uma chave primária global e continua contando entre todas as contas (por exemplo, pode chegar a 7 quando uma conta nova cadastra seu primeiro produto). Isso é normal e não mistura os dados: a separação é feita por `usuario_id`. Na tela, a coluna `Nº` mostra uma numeração sequencial própria da conta, começando em 1; o programa mantém o ID interno real para editar ou excluir o registro certo. Todas as janelas do programa usam o tamanho 800x600.
+
+Ao clicar em **Sair da conta**, a janela principal é fechada e o login reaparece. Para encerrar completamente o programa, feche a janela de login.
+
 ## 4. Roteiro de demonstração
 
-1. Fazer login.
-2. Abrir o Dashboard e mostrar os indicadores.
-3. Abrir Produtos.
-4. Cadastrar um produto novo.
-5. Editar o produto.
-6. Aumentar a quantidade de um produto.
-7. Reduzir a quantidade de um produto.
-8. Tentar colocar uma quantidade negativa e mostrar a validação.
-9. Mostrar o histórico das alterações de estoque.
-10. Excluir o produto de teste.
-11. Voltar ao Dashboard e mostrar o gráfico atualizado.
-12. Abrir `error.log` e explicar a classe Logger.
+1. Se necessário, usar **Criar outra conta** para cadastrar um usuário.
+2. Fazer login com uma conta válida e mostrar que senha incorreta é recusada.
+3. Abrir o Dashboard e mostrar os indicadores.
+4. Abrir Produtos.
+5. Cadastrar um produto novo.
+6. Editar o produto.
+7. Aumentar a quantidade de um produto.
+8. Reduzir a quantidade de um produto.
+9. Tentar colocar uma quantidade negativa e mostrar a validação.
+10. Mostrar o histórico das alterações de estoque.
+11. Excluir o produto de teste.
+12. Voltar ao Dashboard e mostrar o gráfico atualizado.
+13. Clicar em **Sair da conta** e demonstrar que retorna ao login.
+14. Entrar com a outra conta cadastrada.
+15. Abrir `error.log` e explicar a classe Logger.
 
 ## 5. Onde personalizar a aparência
 
@@ -136,7 +150,7 @@ Inicializa o Logger, cria o objeto `DatabaseManager`, inicializa o banco e abre 
 Concentra a conexão com o MySQL e o CRUD. O CRUD usa transações para manter o estoque e o histórico sincronizados. Cadastro, edição e exclusão geram registros automáticos de movimentação.
 
 ### `login.py`
-Cria a primeira janela e chama `verify_user()` para conferir as credenciais.
+Cria a janela de login, chama `authenticate_user()` para validar as credenciais e identificar o usuário; permite cadastrar novas contas com `create_user()`.
 
 ### `gui.py`
 Cria a janela principal, dashboard, tabela de produtos, formulário de CRUD e histórico de movimentações. O gráfico é incorporado ao Tkinter com Matplotlib.
@@ -161,8 +175,10 @@ No cadastro/edicao de produto, o campo Categoria mostra as categorias ja usadas 
 
 ## Regras de produtos e estoque
 
-- O nome do produto e unico no sistema, evitando cadastros duplicados.
+- O nome do produto e unico dentro da conta autenticada, evitando duplicados no mesmo estoque.
 - Na tela Produtos, o botao **Adicionar estoque** permite escolher um produto em um Combobox e informar apenas quantas unidades foram acrescentadas.
 - A edicao continua permitindo informar a quantidade total, o que e util para corrigir um estoque.
 - As entradas de estoque ficam registradas automaticamente no historico de movimentacoes.
+- Os dados de produtos e movimentacoes sao filtrados pelo usuario autenticado.
+- As senhas novas são armazenadas com PBKDF2 e salt aleatório. Hashes SHA-256 antigos são aceitos para compatibilidade e atualizados após um login válido.
 

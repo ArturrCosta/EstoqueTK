@@ -5,6 +5,12 @@
 - [ ] MySQL ligado.
 - [ ] `python main.py` abre sem erro.
 - [ ] Login `admin` / `admin123` funciona.
+- [ ] Criar outra conta funciona com usuário e senha válidos.
+- [ ] Cadastro recusa usuário repetido, senha curta e confirmação divergente.
+- [ ] Uma conta nova consegue fazer login.
+- [ ] **Sair da conta** retorna à tela de login sem fechar a aplicação.
+- [ ] Após sair, é possível entrar com outro usuário.
+- [ ] Senhas não são armazenadas em texto puro; hashes antigos continuam funcionando.
 - [ ] Dashboard carrega os indicadores.
 - [ ] Dashboard carrega o grafico.
 - [ ] Novo produto funciona.

@@ -44,12 +44,12 @@ def make_documentation():
     story += [Spacer(1, 32*mm), p('STOCKFLOW', TITLE), p('Documentacao do prototipo - Sistema de Controle de Estoque', SUB)]
     story += [p('Python + Tkinter + MySQL + Matplotlib', ParagraphStyle('Tech', parent=SUB, fontSize=12, textColor=colors.HexColor('#1f2937'))), Spacer(1, 25*mm)]
     story += [p('Objetivo', H1), p('O StockFlow e um prototipo desktop criado para demonstrar um sistema simples de controle de estoque. O projeto concentra cadastro de produtos, movimentacoes, indicadores e grafico em uma aplicacao pequena e facil de explicar.', BODY)]
-    story += [p('1. Introducao', H1), p('A aplicacao possui uma janela de login e uma janela principal. Depois da autenticacao, o usuario pode consultar o dashboard e realizar o CRUD de produtos. O historico e automatico: o cadastro registra a quantidade inicial como entrada, a edicao registra apenas a diferenca como entrada ou saida, e a exclusao registra a quantidade restante como saida. O historico continua visivel mesmo depois da exclusao do produto.', BODY)]
+    story += [p('1. Introducao', H1), p('A aplicacao possui uma janela de login e uma janela principal. Cada conta autenticada acessa somente seus proprios produtos e movimentacoes; contas novas comecam com estoque vazio. Depois da autenticacao, o usuario pode consultar o dashboard e realizar o CRUD de produtos. O historico e automatico: o cadastro registra a quantidade inicial como entrada, a edicao registra apenas a diferenca como entrada ou saida, e a exclusao registra a quantidade restante como saida. O historico continua visivel mesmo depois da exclusao do produto.', BODY)]
     story += [p('2. Atendimento aos criterios do trabalho', H1)]
     data = [
         [p('<b>Criterio</b>', SMALL), p('<b>Como foi atendido</b>', SMALL)],
         [p('Multiplas janelas', SMALL), p('Login, janela principal e formularios secundarios para cadastro/edicao.', SMALL)],
-        [p('MySQL', SMALL), p('DatabaseManager cria/acessa o banco estoque_db e trabalha com usuarios, produtos e movimentacoes.', SMALL)],
+        [p('MySQL', SMALL), p('DatabaseManager cria/acessa estoque_db e filtra produtos e movimentacoes pelo usuario_id da sessao.', SMALL)],
         [p('CRUD completo', SMALL), p('Create, Read, Update e Delete implementados para produtos.', SMALL)],
         [p('Grafico', SMALL), p('Matplotlib gera um grafico de barras com a quantidade atual de cada produto.', SMALL)],
         [p('Log de erros', SMALL), p('Logger registra excecoes em error.log com data, hora e detalhes.', SMALL)],
@@ -70,7 +70,7 @@ def make_documentation():
     arch = [
         [p('<b>Arquivo / classe</b>', SMALL), p('<b>Responsabilidade</b>', SMALL)],
         [p('main.py', SMALL), p('Inicializar Logger, banco e janela de login.', SMALL)],
-        [p('database.py / DatabaseManager', SMALL), p('Conexao, criacao das tabelas, CRUD, movimentacoes e consultas do dashboard.', SMALL)],
+        [p('database.py / DatabaseManager', SMALL), p('Conexao, migracao do banco, autenticacao e consultas filtradas por usuario_id.', SMALL)],
         [p('login.py / LoginWindow', SMALL), p('Formulario de login e validacao de usuario e senha.', SMALL)],
         [p('gui.py / MainWindow', SMALL), p('Dashboard, produtos, formularios e historico de movimentacoes.', SMALL)],
         [p('logger.py / Logger', SMALL), p('Registro das excecoes no arquivo error.log.', SMALL)],
@@ -83,13 +83,14 @@ def make_documentation():
         ('TOPPADDING',(0,0),(-1,-1),6),('BOTTOMPADDING',(0,0),(-1,-1),6),
     ]))
     story += [t2, p('4. Banco de dados', H1)]
-    story += [p('Tabelas utilizadas:', H2), p('usuarios - acesso ao sistema.<br/>produtos - cadastro e saldo atual.<br/>movimentacoes - registro das entradas e saidas.', BODY)]
-    story += [p('Relacionamento: movimentacoes.produto_id referencia produtos.id com ON DELETE SET NULL, e produto_nome guarda o nome no momento da movimentacao. Assim, o historico sobrevive a exclusoes. O CRUD registra as mudancas de quantidade dentro da mesma transacao que altera o saldo.', BODY)]
+    story += [p('Tabelas utilizadas:', H2), p('usuarios - contas de acesso.<br/>produtos - cadastro, saldo atual e usuario_id (dono do registro).<br/>movimentacoes - historico, usuario_id e referencia opcional ao produto.', BODY)]
+    story += [p('Cada produto e cada movimentacao pertence a uma conta por meio de usuario_id. As consultas do DatabaseManager filtram pelo usuario autenticado, evitando que uma conta veja ou altere o estoque de outra. O nome e unico dentro de cada conta, e contas diferentes podem cadastrar produtos com o mesmo nome.', BODY)]
+    story += [p('Relacionamento: produtos.usuario_id e movimentacoes.usuario_id referenciam usuarios.id. movimentacoes.produto_id referencia produtos.id com ON DELETE SET NULL, e produto_nome guarda o nome no momento da movimentacao. Assim, o historico da propria conta sobrevive a exclusoes. Dados de bancos antigos sem proprietario sao associados ao admin durante a migracao.', BODY)]
     story += [p('5. CRUD de produtos', H1), p('<b>Create:</b> cadastra um produto.<br/><b>Read:</b> lista e consulta produtos.<br/><b>Update:</b> altera os dados de um produto.<br/><b>Delete:</b> exclui o produto selecionado.', BODY)]
     story += [p('6. Movimentacoes', H1), p('Ao cadastrar um produto com quantidade inicial maior que zero, o sistema registra uma ENTRADA. Ao editar, somente a diferenca de quantidade vira ENTRADA ou SAIDA. Ao excluir, a quantidade restante e registrada como SAIDA antes da exclusao. O sistema impede quantidade negativa e o historico mostra as 50 movimentacoes mais recentes.', BODY)]
     story += [p('7. Execucao', H1), p('1. Ligar o MySQL pelo XAMPP ou servidor local.<br/>2. Criar e ativar a venv.<br/>3. Executar pip install -r requirements.txt.<br/>4. Executar python main.py.', BODY)]
     story += [p('Login inicial: admin / admin123', CODE)]
-    story += [p('8. Roteiro de demonstracao', H1), p('Login -> Dashboard -> Produtos -> cadastrar produto e quantidade -> historico mostra ENTRADA -> editar quantidade para cima/baixo -> historico mostra a diferenca -> excluir produto de teste -> historico mantem a SAIDA da quantidade restante -> dashboard/grafico -> error.log.', BODY)]
+    story += [p('8. Roteiro de demonstracao', H1), p('Login com admin -> mostrar estoque existente -> sair da conta -> criar/entrar com outra conta e comprovar que o estoque esta vazio e separado -> cadastrar um produto -> sair e retornar ao admin -> comprovar que o estoque do admin permaneceu separado -> cadastrar/editar/excluir produto de teste -> conferir entradas e saidas no historico -> dashboard/grafico -> error.log.', BODY)]
     story += [p('9. Personalizacao visual', H1), p('As cores principais estao concentradas em THEME, em gui.py. O login possui LOGIN_THEME em login.py. Tambem podem ser alterados nome do sistema, fontes, espacamentos, botoes, tamanho das janelas e logo, mantendo a logica do banco separada.', BODY)]
     story += [p('10. UML simplificado', H1), p('DatabaseManager fornece os dados para LoginWindow e MainWindow. Logger e utilizado para registrar excecoes. DatabaseManager se comunica com o MySQL. O relacionamento de banco principal e movimentacoes.produto_id -> produtos.id, com nome armazenado no historico para preservar registros de produtos excluidos.', BODY)]
     doc.build(story, onFirstPage=header_footer, onLaterPages=header_footer)
@@ -107,8 +108,8 @@ def make_presentation():
     slides = [
         ('STOCKFLOW', ['Sistema de Controle de Estoque', 'Python + Tkinter + MySQL + Matplotlib']),
         ('Problema e objetivo', ['Centralizar o cadastro de produtos.', 'Controlar o saldo atual do estoque.', 'Registrar automaticamente alteracoes de estoque no cadastro, edicao e exclusao.', 'Visualizar indicadores e um grafico.']),
-        ('Funcionalidades', ['Login com usuario e senha.', 'Dashboard com produtos, unidades e estoque baixo.', 'CRUD completo de produtos.', 'Historico automatico de entradas e saidas.', 'Bloqueio de saida maior que o estoque.', 'Grafico com Matplotlib.']),
-        ('Banco de dados', ['usuarios - autenticacao.', 'produtos - cadastro e saldo.', 'movimentacoes - historico.', 'produto_id liga movimentacoes a produtos.']),
+        ('Funcionalidades', ['Login e cadastro de contas.', 'Cada conta ve somente seus produtos e movimentacoes.', 'Dashboard com produtos, unidades e estoque baixo.', 'CRUD completo de produtos.', 'Historico automatico de entradas e saidas.', 'Bloqueio de saida maior que o estoque.', 'Grafico com Matplotlib.']),
+        ('Banco de dados', ['usuarios - autenticacao.', 'produtos possuem usuario_id e nome unico por conta.', 'movimentacoes tambem possuem usuario_id.', 'produto_id liga o historico ao produto quando ele existe.', 'Dados antigos sao migrados para o admin.']),
         ('POO e organizacao', ['DatabaseManager - MySQL e regras de dados.', 'LoginWindow - autenticacao.', 'MainWindow - interface.', 'Logger - registro de erros.', 'main.py - inicio da aplicacao.']),
         ('Demonstracao', ['Login -> Dashboard.', 'Cadastrar produto -> editar -> excluir.', 'Cadastrar -> conferir ENTRADA; editar -> conferir diferenca; excluir -> conferir SAIDA.', 'Tentar colocar quantidade negativa.', 'Mostrar historico e grafico.', 'Mostrar error.log.']),
         ('Codigo que vale explicar', ['Como o DatabaseManager abre conexao.', 'Como o CRUD usa INSERT, SELECT, UPDATE e DELETE.', 'Como cadastro, update_product e delete_product registram o historico automaticamente.', 'Como MainWindow troca as telas.', 'Como Logger grava excecoes.']),

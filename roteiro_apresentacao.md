@@ -15,7 +15,10 @@ Tempo sugerido: 15 a 20 minutos.
 2. Explicar a classe `DatabaseManager` e a conexao com MySQL.
 3. Explicar o CRUD: `INSERT`, `SELECT`, `UPDATE` e `DELETE`.
 4. Mostrar a classe `MainWindow` e como ela chama o banco.
-5. Explicar que a senha do usuario inicial e armazenada como hash SHA-256.
+5. Demonstrar o cadastro de outra conta e explicar que novas senhas são armazenadas com PBKDF2 e salt aleatório; hashes antigos são migrados após login válido.
+6. Mostrar que a nova conta começa com estoque vazio e nao consegue ver ou alterar os produtos do admin.
+7. Cadastrar um produto com nome igual em contas diferentes para explicar que o estoque e separado por usuario_id.
+8. Mostrar que "Sair da conta" retorna para a tela de login sem encerrar a aplicacao.
 
 ## Eduardo - movimentacoes, grafico e testes
 

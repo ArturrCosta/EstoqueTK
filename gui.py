@@ -29,13 +29,14 @@ THEME = {
 class MainWindow:
     """Janela principal, dashboard, produtos e movimentacoes."""
 
-    def __init__(self, root, database):
+    def __init__(self, root, database, on_logout=None):
         self.root = root
         self.database = database
+        self.on_logout = on_logout
         self.window = tk.Toplevel(root)
         self.window.title("StockFlow - Controle de Estoque")
-        self.window.geometry("1100x680")
-        self.window.minsize(950, 600)
+        self.window.geometry("800x600")
+        self.window.resizable(False, False)
         self.window.configure(bg=THEME["background"])
         self.window.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -65,7 +66,7 @@ class MainWindow:
         style.configure("Treeview.Heading", font=("Segoe UI", 9, "bold"), padding=8)
 
     def build_shell(self):
-        self.sidebar = tk.Frame(self.window, bg=THEME["sidebar"], width=220)
+        self.sidebar = tk.Frame(self.window, bg=THEME["sidebar"], width=180)
         self.sidebar.pack(side="left", fill="y")
         self.sidebar.pack_propagate(False)
 
@@ -89,7 +90,7 @@ class MainWindow:
         self.add_nav_button("Produtos", self.show_products)
         self.add_nav_button("Movimentacoes", self.show_movements)
 
-        ttk.Button(self.sidebar, text="Sair", command=self.close).pack(
+        ttk.Button(self.sidebar, text="Sair da conta", command=self.logout).pack(
             side="bottom", fill="x", padx=22, pady=22
         )
 
@@ -169,7 +170,7 @@ class MainWindow:
         chart_frame.pack(fill="both", expand=True, padx=28, pady=22)
 
         if products:
-            figure = Figure(figsize=(7, 3.6), dpi=100)
+            figure = Figure(figsize=(5.2, 3.0), dpi=100)
             axis = figure.add_subplot(111)
             names = [item["nome"] for item in products]
             quantities = [item["quantidade"] for item in products]
@@ -221,33 +222,39 @@ class MainWindow:
         self.title_label("Produtos", "Cadastre produtos, ajuste dados e adicione estoque.")
 
         toolbar = tk.Frame(self.content, bg=THEME["background"])
-        toolbar.pack(fill="x", padx=28, pady=(0, 12))
-        ttk.Button(toolbar, text="Novo produto", command=self.open_product_form).pack(side="left")
-        ttk.Button(toolbar, text="Adicionar estoque", command=self.open_add_stock_dialog).pack(
-            side="left", padx=8
+        toolbar.pack(fill="x", padx=20, pady=(0, 10))
+
+        first_row = tk.Frame(toolbar, bg=THEME["background"])
+        first_row.pack(fill="x")
+        ttk.Button(first_row, text="Novo produto", command=self.open_product_form).pack(side="left")
+        ttk.Button(first_row, text="Adicionar estoque", command=self.open_add_stock_dialog).pack(
+            side="left", padx=6
         )
-        ttk.Button(toolbar, text="Editar selecionado", command=self.edit_selected_product).pack(
-            side="left", padx=8
-        )
-        ttk.Button(toolbar, text="Excluir selecionado", command=self.delete_selected_product).pack(
+        ttk.Button(first_row, text="Atualizar", command=self.refresh_products).pack(side="right")
+
+        second_row = tk.Frame(toolbar, bg=THEME["background"])
+        second_row.pack(fill="x", pady=(6, 0))
+        ttk.Button(second_row, text="Editar selecionado", command=self.edit_selected_product).pack(
             side="left"
         )
-        ttk.Button(toolbar, text="Atualizar", command=self.refresh_products).pack(side="right")
+        ttk.Button(second_row, text="Excluir selecionado", command=self.delete_selected_product).pack(
+            side="left", padx=6
+        )
 
         table_frame = tk.Frame(self.content, bg=THEME["panel"])
-        table_frame.pack(fill="both", expand=True, padx=28, pady=(0, 28))
+        table_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
 
         columns = ("id", "nome", "categoria", "quantidade", "preco", "minimo")
         self.product_tree = ttk.Treeview(table_frame, columns=columns, show="headings")
         headings = {
-            "id": "ID",
+            "id": "Nº",
             "nome": "Produto",
             "categoria": "Categoria",
             "quantidade": "Quantidade",
             "preco": "Preco",
             "minimo": "Estoque min.",
         }
-        widths = {"id": 50, "nome": 200, "categoria": 150, "quantidade": 100, "preco": 100, "minimo": 100}
+        widths = {"id": 42, "nome": 125, "categoria": 95, "quantidade": 78, "preco": 80, "minimo": 80}
         for key in columns:
             self.product_tree.heading(key, text=headings[key])
             self.product_tree.column(key, width=widths[key], anchor="center")
@@ -268,13 +275,16 @@ class MainWindow:
         try:
             for item in self.product_tree.get_children():
                 self.product_tree.delete(item)
-            for product in self.database.list_products():
+            # O numero exibido e sequencial dentro da conta. O ID real do MySQL
+            # fica no iid da linha para editar/excluir o registro correto.
+            for display_number, product in enumerate(self.database.list_products(), start=1):
                 low = product["quantidade"] <= product["estoque_minimo"]
                 self.product_tree.insert(
                     "",
                     "end",
+                    iid=str(product["id"]),
                     values=(
-                        product["id"],
+                        display_number,
                         product["nome"],
                         product["categoria"],
                         product["quantidade"],
@@ -292,12 +302,12 @@ class MainWindow:
         if not selected:
             messagebox.showwarning("Atencao", "Selecione um produto primeiro.")
             return None
-        return int(self.product_tree.item(selected[0], "values")[0])
+        return int(selected[0])
 
     def open_product_form(self, product=None):
         dialog = tk.Toplevel(self.window)
         dialog.title("Novo produto" if product is None else "Editar produto")
-        dialog.geometry("430x520")
+        dialog.geometry("800x600")
         dialog.resizable(False, False)
         dialog.transient(self.window)
         dialog.grab_set()
@@ -399,7 +409,7 @@ class MainWindow:
         """Abre uma janela simples para acrescentar unidades a um produto."""
         dialog = tk.Toplevel(self.window)
         dialog.title("Adicionar estoque")
-        dialog.geometry("430x330")
+        dialog.geometry("800x600")
         dialog.resizable(False, False)
         dialog.transient(self.window)
         dialog.grab_set()
@@ -554,7 +564,7 @@ class MainWindow:
             padx=24,
             pady=18,
         )
-        info.pack(fill="x", padx=28, pady=(0, 15))
+        info.pack(fill="x", padx=20, pady=(0, 12))
 
         tk.Label(
             info,
@@ -574,7 +584,7 @@ class MainWindow:
             fg=THEME["muted"],
             font=("Segoe UI", 9),
             justify="left",
-            wraplength=760,
+            wraplength=520,
         ).pack(anchor="w", pady=(5, 0))
 
         try:
@@ -585,7 +595,7 @@ class MainWindow:
             return
 
         history_frame = tk.Frame(self.content, bg=THEME["panel"])
-        history_frame.pack(fill="both", expand=True, padx=28, pady=(0, 28))
+        history_frame.pack(fill="both", expand=True, padx=20, pady=(0, 20))
         tk.Label(
             history_frame,
             text="Ultimas movimentacoes",
@@ -597,18 +607,20 @@ class MainWindow:
         columns = ("id", "produto", "tipo", "quantidade", "data")
         tree = ttk.Treeview(history_frame, columns=columns, show="headings", height=10)
         headings = {
-            "id": "ID",
+            "id": "Nº",
             "produto": "Produto",
             "tipo": "Tipo",
             "quantidade": "Quantidade",
             "data": "Data/Hora",
         }
-        widths = {"id": 50, "produto": 250, "tipo": 110, "quantidade": 110, "data": 180}
+        widths = {"id": 40, "produto": 150, "tipo": 80, "quantidade": 85, "data": 130}
         for key in columns:
             tree.heading(key, text=headings[key])
             tree.column(key, width=widths[key], anchor="center")
         tree.column("produto", anchor="w")
-        for movement in movements:
+        # O numero exibido no historico tambem e sequencial por conta.
+        # O ID real da movimentacao continua guardado apenas no banco.
+        for display_number, movement in enumerate(movements, start=1):
             data_hora = movement["data_hora"]
             data_text = (
                 data_hora.strftime("%d/%m/%Y %H:%M")
@@ -619,7 +631,7 @@ class MainWindow:
                 "",
                 "end",
                 values=(
-                    movement["id"],
+                    display_number,
                     movement["produto"],
                     movement["tipo"],
                     movement["quantidade"],
@@ -628,6 +640,22 @@ class MainWindow:
             )
         tree.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
+    def logout(self):
+        """Encerra a sessao atual e volta para a tela de login."""
+        if not messagebox.askyesno(
+            "Sair da conta",
+            "Deseja sair da conta e voltar para a tela de login?",
+            parent=self.window,
+        ):
+            return
+
+        self.window.destroy()
+        if self.on_logout:
+            self.on_logout()
+        else:
+            self.root.deiconify()
+
     def close(self):
+        """Fecha a aplicacao quando o usuario fecha a janela principal."""
         self.window.destroy()
         self.root.destroy()

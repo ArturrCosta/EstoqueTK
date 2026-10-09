@@ -25,11 +25,25 @@ def main():
         root.destroy()
         return
 
-    def open_main_window():
-        root.withdraw()
-        MainWindow(root, database)
+    login_window = None
+    main_window = None
 
-    LoginWindow(root, database, open_main_window)
+    def return_to_login():
+        nonlocal main_window
+        database.clear_current_user()
+        main_window = None
+        root.deiconify()
+        root.lift()
+        root.focus_force()
+        login_window.user_entry.focus_set()
+
+    def open_main_window(user):
+        nonlocal main_window
+        database.set_current_user(user["id"])
+        root.withdraw()
+        main_window = MainWindow(root, database, on_logout=return_to_login)
+
+    login_window = LoginWindow(root, database, open_main_window)
     root.mainloop()
 
 

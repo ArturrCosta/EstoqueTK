@@ -22,7 +22,7 @@ class LoginWindow:
         self.on_success = on_success
 
         self.root.title("StockFlow - Login")
-        self.root.geometry("420x360")
+        self.root.geometry("800x600")
         self.root.resizable(False, False)
 
         self.setup_styles()
@@ -79,6 +79,13 @@ class LoginWindow:
             frame, text="ENTRAR", command=self.login, style="Login.TButton"
         ).pack(fill="x")
 
+        ttk.Button(
+            frame,
+            text="Criar outra conta",
+            command=self.open_registration,
+            style="Login.TButton",
+        ).pack(fill="x", pady=(8, 0))
+
         self.user_entry.focus()
         self.password_entry.bind("<Return>", lambda _event: self.login())
 
@@ -91,14 +98,98 @@ class LoginWindow:
             return
 
         try:
-            if self.database.verify_user(username, password):
-                self.on_success()
+            user = self.database.authenticate_user(username, password)
+            if user is not None:
+                # Evita manter a senha digitada no campo enquanto o login esta oculto.
+                self.password_entry.delete(0, tk.END)
+                self.on_success(user)
             else:
-                messagebox.showerror("Login", "Usuario ou senha incorretos.")
+                messagebox.showerror("Login", "Usuário ou senha incorretos.", parent=self.root)
         except Exception as error:
             Logger.registrar(error)
             messagebox.showerror(
                 "Erro",
                 "Nao foi possivel acessar o banco de dados.\n"
                 "Verifique a configuracao e veja o error.log.",
+                parent=self.root,
             )
+
+    def open_registration(self):
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Criar conta - StockFlow")
+        dialog.geometry("800x600")
+        dialog.resizable(False, False)
+        dialog.transient(self.root)
+        dialog.grab_set()
+
+        frame = tk.Frame(dialog, bg=LOGIN_THEME["background"], padx=30, pady=24)
+        frame.pack(fill="both", expand=True)
+
+        tk.Label(
+            frame,
+            text="Criar conta",
+            font=("Segoe UI", 18, "bold"),
+            bg=LOGIN_THEME["background"],
+            fg=LOGIN_THEME["text"],
+        ).pack(anchor="w", pady=(0, 4))
+        tk.Label(
+            frame,
+            text="Usuário de 3 a 50 caracteres; senha com 8 ou mais.",
+            font=("Segoe UI", 9),
+            bg=LOGIN_THEME["background"],
+            fg=LOGIN_THEME["muted"],
+        ).pack(anchor="w", pady=(0, 16))
+
+        tk.Label(frame, text="Usuário", bg=LOGIN_THEME["background"], anchor="w").pack(fill="x")
+        username_entry = ttk.Entry(frame)
+        username_entry.pack(fill="x", ipady=5, pady=(4, 10))
+
+        tk.Label(frame, text="Senha", bg=LOGIN_THEME["background"], anchor="w").pack(fill="x")
+        password_entry = ttk.Entry(frame, show="*")
+        password_entry.pack(fill="x", ipady=5, pady=(4, 10))
+
+        tk.Label(
+            frame, text="Confirmar senha", bg=LOGIN_THEME["background"], anchor="w"
+        ).pack(fill="x")
+        confirm_entry = ttk.Entry(frame, show="*")
+        confirm_entry.pack(fill="x", ipady=5, pady=(4, 16))
+
+        def register():
+            username = username_entry.get().strip()
+            password = password_entry.get()
+            confirmation = confirm_entry.get()
+
+            if password != confirmation:
+                messagebox.showwarning(
+                    "Dados inválidos", "As senhas não coincidem.", parent=dialog
+                )
+                return
+
+            try:
+                self.database.create_user(username, password)
+            except ValueError as error:
+                messagebox.showwarning("Dados inválidos", str(error), parent=dialog)
+                return
+            except Exception as error:
+                Logger.registrar(error)
+                messagebox.showerror(
+                    "Erro",
+                    "Não foi possível criar a conta. Verifique o banco e o error.log.",
+                    parent=dialog,
+                )
+                return
+
+            self.user_entry.delete(0, tk.END)
+            self.user_entry.insert(0, username)
+            self.password_entry.delete(0, tk.END)
+            messagebox.showinfo(
+                "Conta criada", "Conta criada. Agora entre com seu usuário e senha.", parent=dialog
+            )
+            dialog.destroy()
+            self.password_entry.focus_set()
+
+        ttk.Button(
+            frame, text="Cadastrar conta", command=register, style="Login.TButton"
+        ).pack(fill="x")
+        confirm_entry.bind("<Return>", lambda _event: register())
+        username_entry.focus_set()
