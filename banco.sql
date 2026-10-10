@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS movimentacoes (
     produto_nome VARCHAR(100) NOT NULL,
     tipo ENUM('ENTRADA', 'SAIDA') NOT NULL,
     quantidade INT NOT NULL,
+    preco_unitario DECIMAL(10,2) NULL DEFAULT NULL,
     data_hora DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     INDEX idx_movimentacoes_usuario (usuario_id, data_hora),
     CONSTRAINT fk_mov_usuario FOREIGN KEY (usuario_id)

@@ -12,8 +12,7 @@ Protótipo desktop em Python + Tkinter + MySQL desenvolvido para o trabalho de A
 - MySQL para persistência.
 - Registro automatico de movimentacoes ao cadastrar, editar ou excluir produtos.
 - Histórico das últimas movimentações.
-- Dashboard com indicadores.
-- Gráfico com Matplotlib.
+- Dashboard com indicadores e três gráficos Matplotlib: estoque atual, entradas x saídas e valor bruto das saídas com preço histórico.
 - Registro de erros em `error.log`.
 - Programação Orientada a Objetos.
 - Código separado em módulos.
@@ -72,7 +71,7 @@ Na tela de login, use **Criar outra conta** para cadastrar um usuário adicional
 
 Cada conta possui seu próprio conjunto de produtos e movimentações. Uma conta nova começa com o estoque vazio: ela não vê, altera nem exclui os produtos do `admin` ou de outra conta. O nome de um produto deve ser único dentro da mesma conta, mas contas diferentes podem usar o mesmo nome.
 
-A coluna `id` do MySQL é uma chave primária global e continua contando entre todas as contas (por exemplo, pode chegar a 7 quando uma conta nova cadastra seu primeiro produto). Isso é normal e não mistura os dados: a separação é feita por `usuario_id`. Na tela, a coluna `Nº` mostra uma numeração sequencial própria da conta, começando em 1; o programa mantém o ID interno real para editar ou excluir o registro certo. Todas as janelas do programa usam o tamanho 800x600.
+A coluna `id` do MySQL é uma chave primária global e continua contando entre todas as contas (por exemplo, pode chegar a 7 quando uma conta nova cadastra seu primeiro produto). Isso é normal e não mistura os dados: a separação é feita por `usuario_id`. Na tela, a coluna `Nº` mostra uma numeração sequencial própria da conta, começando em 1; o programa mantém o ID interno real para editar ou excluir o registro certo. A janela principal abre maximizada em modo janela; formulários menores continuam com dimensões próprias.
 
 Ao clicar em **Sair da conta**, a janela principal é fechada e o login reaparece. Para encerrar completamente o programa, feche a janela de login.
 
@@ -82,17 +81,18 @@ Ao clicar em **Sair da conta**, a janela principal é fechada e o login reaparec
 2. Fazer login com uma conta válida e mostrar que senha incorreta é recusada.
 3. Abrir o Dashboard e mostrar os indicadores.
 4. Abrir Produtos.
-5. Cadastrar um produto novo.
-6. Editar o produto.
-7. Aumentar a quantidade de um produto.
-8. Reduzir a quantidade de um produto.
-9. Tentar colocar uma quantidade negativa e mostrar a validação.
-10. Mostrar o histórico das alterações de estoque.
+5. Cadastrar um produto novo e verificar que nome e categoria ficam em minúsculas e sem acentos.
+6. Deixar quantidade, preço ou estoque mínimo vazios para conferir os avisos de validação.
+7. Editar o produto.
+8. Aumentar a quantidade digitando um valor positivo no ajuste de estoque.
+9. Reduzir a quantidade digitando um valor negativo no ajuste de estoque.
+10. Tentar retirar mais unidades do que há no estoque e mostrar a validação.
+11. Mostrar o histórico das alterações de estoque.
 11. Excluir o produto de teste.
-12. Voltar ao Dashboard e mostrar o gráfico atualizado.
-13. Clicar em **Sair da conta** e demonstrar que retorna ao login.
-14. Entrar com a outra conta cadastrada.
-15. Abrir `error.log` e explicar a classe Logger.
+13. Voltar ao Dashboard e mostrar os três gráficos atualizados.
+14. Clicar em **Sair da conta** e demonstrar que retorna ao login.
+15. Entrar com a outra conta cadastrada.
+16. Abrir `error.log` e explicar a classe Logger.
 
 ## 5. Onde personalizar a aparência
 
@@ -133,6 +133,7 @@ SistemaEstoque_Protótipo/
 ├── login.py
 ├── gui.py
 ├── logger.py
+├── text_utils.py
 ├── banco.sql
 ├── requirements.txt
 ├── error.log
@@ -153,7 +154,7 @@ Concentra a conexão com o MySQL e o CRUD. O CRUD usa transações para manter o
 Cria a janela de login, chama `authenticate_user()` para validar as credenciais e identificar o usuário; permite cadastrar novas contas com `create_user()`.
 
 ### `gui.py`
-Cria a janela principal, dashboard, tabela de produtos, formulário de CRUD e histórico de movimentações. O gráfico é incorporado ao Tkinter com Matplotlib.
+Cria a janela principal, dashboard, tabela de produtos, formulário de CRUD e histórico de movimentações. Os três gráficos são incorporados ao Tkinter com Matplotlib.
 
 ### `logger.py`
 Centraliza o registro de exceções no arquivo `error.log`.
@@ -170,13 +171,15 @@ Centraliza o registro de exceções no arquivo `error.log`.
 | Log de Erros | `Logger` grava exceções em `error.log` |
 | Documentação | `documentacao.pdf` e `UML.txt` |
 
-### Categorias
-No cadastro/edicao de produto, o campo Categoria mostra as categorias ja usadas e tambem permite digitar uma categoria nova.
+### Categorias e normalização
+No cadastro/edição, o campo Categoria mostra categorias já usadas e também permite digitar uma nova. Nome e categoria são padronizados para minúsculas, sem acentos e com espaços duplicados removidos. Nomes equivalentes após essa padronização não podem ser cadastrados duas vezes na mesma conta.
 
 ## Regras de produtos e estoque
 
 - O nome do produto e unico dentro da conta autenticada, evitando duplicados no mesmo estoque.
-- Na tela Produtos, o botao **Adicionar estoque** permite escolher um produto em um Combobox e informar apenas quantas unidades foram acrescentadas.
+- Na tela Produtos, o ajuste rápido permite escolher um produto e informar um valor positivo para entrada ou negativo para saída.
+- O campo preço, a quantidade e o estoque mínimo geram avisos específicos quando ficam vazios.
+- O gráfico de valor bruto usa o preço unitário guardado no momento de cada saída feita pelo ajuste negativo; movimentos antigos e baixas geradas ao editar/excluir não são somados como receita, pois não têm um preço histórico de venda confiável.
 - A edicao continua permitindo informar a quantidade total, o que e util para corrigir um estoque.
 - As entradas de estoque ficam registradas automaticamente no historico de movimentacoes.
 - Os dados de produtos e movimentacoes sao filtrados pelo usuario autenticado.

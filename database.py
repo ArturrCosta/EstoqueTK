@@ -7,6 +7,8 @@ from typing import Any, Optional
 import mysql.connector
 from mysql.connector import Error, IntegrityError
 
+from text_utils import normalize_text
+
 
 # PERSONALIZE AQUI: altere estes dados para o seu MySQL local.
 DB_CONFIG = {
@@ -148,6 +150,7 @@ class DatabaseManager:
                     produto_nome VARCHAR(100) NULL,
                     tipo ENUM('ENTRADA', 'SAIDA') NOT NULL,
                     quantidade INT NOT NULL,
+                    preco_unitario DECIMAL(10,2) NULL DEFAULT NULL,
                     data_hora DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
                 ) ENGINE=InnoDB
                 """
@@ -157,6 +160,13 @@ class DatabaseManager:
             if not self._column_exists(cursor, database_name, "movimentacoes", "produto_nome"):
                 cursor.execute(
                     "ALTER TABLE movimentacoes ADD COLUMN produto_nome VARCHAR(100) NULL AFTER produto_id"
+                )
+            # Guarda o preco unitario apenas nas saidas registradas como venda
+            # pelo ajuste negativo de estoque. Registros antigos ficam NULL porque
+            # o preco historico deles nao pode ser recuperado com seguranca.
+            if not self._column_exists(cursor, database_name, "movimentacoes", "preco_unitario"):
+                cursor.execute(
+                    "ALTER TABLE movimentacoes ADD COLUMN preco_unitario DECIMAL(10,2) NULL DEFAULT NULL AFTER quantidade"
                 )
 
             # Mantem o login inicial de compatibilidade e nao substitui contas existentes.
@@ -224,17 +234,17 @@ class DatabaseManager:
                 )
                 # Busca os IDs inseridos e registra as entradas iniciais.
                 cursor.execute(
-                    "SELECT id, nome, quantidade FROM produtos WHERE usuario_id = %s AND nome IN (%s, %s, %s, %s)",
+                    "SELECT id, nome, quantidade, preco FROM produtos WHERE usuario_id = %s AND nome IN (%s, %s, %s, %s)",
                     (legacy_owner_id, "Teclado", "Mouse", "Cabo HDMI", "Webcam"),
                 )
-                for product_id, name, quantity in cursor.fetchall():
+                for product_id, name, quantity, price in cursor.fetchall():
                     cursor.execute(
                         """
                         INSERT INTO movimentacoes
-                            (usuario_id, produto_id, produto_nome, tipo, quantidade)
-                        VALUES (%s, %s, %s, 'ENTRADA', %s)
+                            (usuario_id, produto_id, produto_nome, tipo, quantidade, preco_unitario)
+                        VALUES (%s, %s, %s, 'ENTRADA', %s, %s)
                         """,
-                        (legacy_owner_id, product_id, name, quantity),
+                        (legacy_owner_id, product_id, name, quantity, price),
                     )
 
             # Remove a restricao antiga que proibia dois usuarios distintos de ter
@@ -441,9 +451,20 @@ class DatabaseManager:
     def create_product(self, nome, categoria, quantidade, preco, estoque_minimo):
         """Cria produto e registra a quantidade inicial como entrada."""
         user_id = self._require_user_id()
+        nome = normalize_text(nome)
+        categoria = normalize_text(categoria)
+        if not nome or not categoria:
+            raise ValueError("Nome e categoria sao obrigatorios.")
+
         conn = self.connect()
         cursor = conn.cursor()
         try:
+            # Compara nomes ja existentes depois da mesma normalizacao, inclusive
+            # registros antigos que possam ter maiusculas ou acentos.
+            cursor.execute("SELECT nome FROM produtos WHERE usuario_id = %s", (user_id,))
+            if any(normalize_text(row[0]) == nome for row in cursor.fetchall()):
+                raise ValueError("Voce ja possui um produto com esse nome.")
+
             cursor.execute(
                 """
                 INSERT INTO produtos
@@ -476,23 +497,19 @@ class DatabaseManager:
             conn.close()
 
     def product_name_exists(self, nome, exclude_id=None):
-        """Verifica duplicidade apenas no estoque do usuario autenticado."""
+        """Verifica duplicidade sem diferenciar maiusculas, acentos ou espacos extras."""
         user_id = self._require_user_id()
+        normalized_name = normalize_text(nome)
         conn = self.connect()
         cursor = conn.cursor()
         try:
-            if exclude_id is None:
-                cursor.execute(
-                    "SELECT 1 FROM produtos WHERE usuario_id = %s AND nome = %s LIMIT 1",
-                    (user_id, nome),
-                )
-            else:
-                cursor.execute(
-                    """SELECT 1 FROM produtos
-                    WHERE usuario_id = %s AND nome = %s AND id <> %s LIMIT 1""",
-                    (user_id, nome, exclude_id),
-                )
-            return cursor.fetchone() is not None
+            cursor.execute("SELECT id, nome FROM produtos WHERE usuario_id = %s", (user_id,))
+            for product_id, existing_name in cursor.fetchall():
+                if exclude_id is not None and int(product_id) == int(exclude_id):
+                    continue
+                if normalize_text(existing_name) == normalized_name:
+                    return True
+            return False
         finally:
             cursor.close()
             conn.close()
@@ -536,6 +553,52 @@ class DatabaseManager:
             cursor.close()
             conn.close()
 
+    def remove_stock(self, product_id: int, amount: int):
+        """Retira unidades do estoque e registra a saída no histórico."""
+        user_id = self._require_user_id()
+        amount = int(amount)
+        if amount <= 0:
+            raise ValueError("A quantidade a retirar deve ser maior que zero.")
+
+        conn = self.connect()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute(
+                """SELECT nome, quantidade, preco FROM produtos
+                WHERE id = %s AND usuario_id = %s FOR UPDATE""",
+                (product_id, user_id),
+            )
+            product = cursor.fetchone()
+            if product is None:
+                raise ValueError("Produto não encontrado na sua conta.")
+
+            current_quantity = int(product["quantidade"])
+            if amount > current_quantity:
+                raise ValueError(
+                    f"Estoque insuficiente. Disponível: {current_quantity} unidade(s)."
+                )
+
+            new_quantity = current_quantity - amount
+            cursor.execute(
+                "UPDATE produtos SET quantidade = %s WHERE id = %s AND usuario_id = %s",
+                (new_quantity, product_id, user_id),
+            )
+            cursor.execute(
+                """
+                INSERT INTO movimentacoes
+                    (usuario_id, produto_id, produto_nome, tipo, quantidade, preco_unitario)
+                VALUES (%s, %s, %s, 'SAIDA', %s, %s)
+                """,
+                (user_id, product_id, product["nome"], amount, product["preco"]),
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            cursor.close()
+            conn.close()
+
     def list_categories(self):
         """Retorna categorias usadas pelo usuario autenticado."""
         user_id = self._require_user_id()
@@ -554,6 +617,11 @@ class DatabaseManager:
     def update_product(self, product_id, nome, categoria, quantidade, preco, estoque_minimo):
         """Atualiza produto e registra apenas a diferenca do estoque."""
         user_id = self._require_user_id()
+        nome = normalize_text(nome)
+        categoria = normalize_text(categoria)
+        if not nome or not categoria:
+            raise ValueError("Nome e categoria sao obrigatorios.")
+
         conn = self.connect()
         cursor = conn.cursor(dictionary=True)
         try:
@@ -565,6 +633,14 @@ class DatabaseManager:
             product = cursor.fetchone()
             if product is None:
                 raise ValueError("Produto nao encontrado na sua conta.")
+
+            cursor.execute(
+                "SELECT id, nome FROM produtos WHERE usuario_id = %s AND id <> %s",
+                (user_id, product_id),
+            )
+            for other_product in cursor.fetchall():
+                if normalize_text(other_product["nome"]) == nome:
+                    raise ValueError("Voce ja possui outro produto com esse nome.")
 
             difference = int(quantidade) - int(product["quantidade"])
             cursor.execute(
@@ -578,6 +654,8 @@ class DatabaseManager:
             )
             if difference != 0:
                 movement_type = "ENTRADA" if difference > 0 else "SAIDA"
+                # Alteracoes de quantidade pelo formulario sao ajustes de inventario,
+                # nao vendas: deixam preco_unitario NULL para nao inflar a receita.
                 cursor.execute(
                     """
                     INSERT INTO movimentacoes
@@ -675,6 +753,58 @@ class DatabaseManager:
             )
             low_stock = cursor.fetchone()[0]
             return total_products, total_units, low_stock
+        finally:
+            cursor.close()
+            conn.close()
+
+
+    def dashboard_movement_totals(self, limit=8):
+        """Retorna entradas e saidas acumuladas por nome historico de produto."""
+        user_id = self._require_user_id()
+        conn = self.connect()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute(
+                """
+                SELECT COALESCE(p.nome, m.produto_nome) AS produto,
+                       COALESCE(SUM(CASE WHEN m.tipo = 'ENTRADA' THEN m.quantidade ELSE 0 END), 0) AS entradas,
+                       COALESCE(SUM(CASE WHEN m.tipo = 'SAIDA' THEN m.quantidade ELSE 0 END), 0) AS saidas
+                FROM movimentacoes m
+                LEFT JOIN produtos p ON p.id = m.produto_id AND p.usuario_id = m.usuario_id
+                WHERE m.usuario_id = %s
+                GROUP BY COALESCE(p.nome, m.produto_nome)
+                ORDER BY saidas DESC, entradas DESC, produto ASC
+                LIMIT %s
+                """,
+                (user_id, int(limit)),
+            )
+            return cursor.fetchall()
+        finally:
+            cursor.close()
+            conn.close()
+
+    def dashboard_gross_revenue(self, limit=8):
+        """Calcula valor bruto das saidas que guardam o preco unitario da retirada."""
+        user_id = self._require_user_id()
+        conn = self.connect()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            cursor.execute(
+                """
+                SELECT COALESCE(p.nome, m.produto_nome) AS produto,
+                       COALESCE(SUM(m.quantidade * m.preco_unitario), 0) AS receita_bruta
+                FROM movimentacoes m
+                LEFT JOIN produtos p ON p.id = m.produto_id AND p.usuario_id = m.usuario_id
+                WHERE m.usuario_id = %s
+                  AND m.tipo = 'SAIDA'
+                  AND m.preco_unitario IS NOT NULL
+                GROUP BY COALESCE(p.nome, m.produto_nome)
+                ORDER BY receita_bruta DESC, produto ASC
+                LIMIT %s
+                """,
+                (user_id, int(limit)),
+            )
+            return cursor.fetchall()
         finally:
             cursor.close()
             conn.close()

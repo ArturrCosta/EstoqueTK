@@ -22,8 +22,13 @@ class LoginWindow:
         self.on_success = on_success
 
         self.root.title("StockFlow - Login")
-        self.root.geometry("800x600")
-        self.root.resizable(False, False)
+        self.root.geometry("1100x700")
+        self.root.resizable(True, True)
+        # A tela de login também abre maximizada, mas seu formulário fica centralizado.
+        try:
+            self.root.state("zoomed")
+        except tk.TclError:
+            pass
 
         self.setup_styles()
         self.build()
@@ -39,52 +44,59 @@ class LoginWindow:
     def build(self):
         self.root.configure(bg=LOGIN_THEME["background"])
 
-        frame = tk.Frame(
-            self.root,
-            bg=LOGIN_THEME["background"],
-            padx=35,
-            pady=30,
+        # O cartão tem largura limitada para os campos e botões não atravessarem
+        # a tela quando a janela estiver maximizada.
+        outer = tk.Frame(self.root, bg=LOGIN_THEME["background"])
+        outer.pack(fill="both", expand=True)
+
+        card = tk.Frame(
+            outer,
+            bg="#ffffff",
+            padx=38,
+            pady=34,
+            highlightbackground="#e1e6ed",
+            highlightthickness=1,
         )
-        frame.pack(fill="both", expand=True)
+        card.pack(expand=True)
 
         tk.Label(
-            frame,
+            card,
             text="STOCKFLOW",
-            font=("Segoe UI", 22, "bold"),
-            bg=LOGIN_THEME["background"],
+            font=("Segoe UI", 24, "bold"),
+            bg="#ffffff",
             fg=LOGIN_THEME["text"],
-        ).pack(pady=(10, 2))
+        ).pack(pady=(4, 2))
 
         tk.Label(
-            frame,
+            card,
             text="Controle de Estoque",
-            font=("Segoe UI", 11),
-            bg=LOGIN_THEME["background"],
+            font=("Segoe UI", 10),
+            bg="#ffffff",
             fg=LOGIN_THEME["muted"],
-        ).pack(pady=(0, 24))
+        ).pack(pady=(0, 28))
 
         tk.Label(
-            frame, text="Usuario", bg=LOGIN_THEME["background"], anchor="w"
+            card, text="Usuário", bg="#ffffff", fg=LOGIN_THEME["text"], anchor="w"
         ).pack(fill="x")
-        self.user_entry = ttk.Entry(frame)
-        self.user_entry.pack(fill="x", ipady=6, pady=(4, 12))
+        self.user_entry = ttk.Entry(card, width=34)
+        self.user_entry.pack(fill="x", ipady=6, pady=(5, 14))
 
         tk.Label(
-            frame, text="Senha", bg=LOGIN_THEME["background"], anchor="w"
+            card, text="Senha", bg="#ffffff", fg=LOGIN_THEME["text"], anchor="w"
         ).pack(fill="x")
-        self.password_entry = ttk.Entry(frame, show="*")
-        self.password_entry.pack(fill="x", ipady=6, pady=(4, 20))
+        self.password_entry = ttk.Entry(card, show="*", width=34)
+        self.password_entry.pack(fill="x", ipady=6, pady=(5, 22))
 
         ttk.Button(
-            frame, text="ENTRAR", command=self.login, style="Login.TButton"
+            card, text="ENTRAR", command=self.login, style="Login.TButton"
         ).pack(fill="x")
 
         ttk.Button(
-            frame,
+            card,
             text="Criar outra conta",
             command=self.open_registration,
             style="Login.TButton",
-        ).pack(fill="x", pady=(8, 0))
+        ).pack(fill="x", pady=(9, 0))
 
         self.user_entry.focus()
         self.password_entry.bind("<Return>", lambda _event: self.login())
@@ -117,7 +129,7 @@ class LoginWindow:
     def open_registration(self):
         dialog = tk.Toplevel(self.root)
         dialog.title("Criar conta - StockFlow")
-        dialog.geometry("800x600")
+        dialog.geometry("480x460")
         dialog.resizable(False, False)
         dialog.transient(self.root)
         dialog.grab_set()
