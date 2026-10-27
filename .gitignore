@@ -4,3 +4,4 @@ __pycache__/
 .vscode/
 .idea/
 Thumbs.db
+stockflow_backup.json

@@ -1,7 +1,11 @@
 import hashlib
 import hmac
+import json
 import re
 import secrets
+from datetime import datetime
+from decimal import Decimal
+from pathlib import Path
 from typing import Any, Optional
 
 import mysql.connector
@@ -41,6 +45,148 @@ class DatabaseManager:
         """Remove o usuario ativo ao sair da conta."""
         self.current_user_id = None
 
+    @staticmethod
+    def _backup_path() -> Path:
+        """Arquivo portatil que acompanha o projeto e guarda os dados completos."""
+        return Path(__file__).resolve().parent / "stockflow_backup.json"
+
+    @staticmethod
+    def _json_value(value):
+        """Converte tipos do MySQL para valores que o JSON consegue salvar."""
+        if isinstance(value, datetime):
+            return value.isoformat(sep=" ", timespec="seconds")
+        if isinstance(value, Decimal):
+            return str(value)
+        raise TypeError(f"Tipo nao suportado no backup: {type(value).__name__}")
+
+    def _read_backup(self):
+        """Lê e valida o backup sem alterar o banco de dados."""
+        path = self._backup_path()
+        try:
+            snapshot = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as error:
+            raise RuntimeError(
+                f"O arquivo de recuperacao {path.name} existe, mas nao pode ser lido. "
+                "Nao o apague antes de verificar o arquivo."
+            ) from error
+
+        tables = snapshot.get("tables") if isinstance(snapshot, dict) else None
+        required_tables = ("usuarios", "produtos", "movimentacoes")
+        if not isinstance(snapshot, dict) or snapshot.get("version") != 1 or not isinstance(tables, dict) or any(
+            not isinstance(tables.get(name), list) for name in required_tables
+        ):
+            raise RuntimeError(
+                f"O arquivo {path.name} nao tem um formato de backup StockFlow valido."
+            )
+        return snapshot
+
+    def _backup_is_valid(self) -> bool:
+        """Indica se existe um backup que pode ser usado para recuperacao."""
+        if not self._backup_path().exists():
+            return False
+        try:
+            self._read_backup()
+            return True
+        except RuntimeError:
+            # Se o banco atual tiver dados, a inicializacao podera substituir um
+            # backup corrompido; se estiver vazio, a tentativa de restaurar falha
+            # de forma segura em vez de apagar a unica copia existente.
+            return False
+
+    def _write_backup(self) -> None:
+        """Salva usuarios, produtos e historico em arquivo de forma atomica."""
+        conn = self.connect()
+        cursor = conn.cursor(dictionary=True)
+        try:
+            tables = {}
+            for table in ("usuarios", "produtos", "movimentacoes"):
+                cursor.execute(f"SELECT * FROM `{table}` ORDER BY id")
+                tables[table] = cursor.fetchall()
+            snapshot = {
+                "version": 1,
+                "saved_at": datetime.now().isoformat(timespec="seconds"),
+                "tables": tables,
+            }
+        finally:
+            cursor.close()
+            conn.close()
+
+        path = self._backup_path()
+        temporary_path = path.with_suffix(path.suffix + ".tmp")
+        temporary_path.write_text(
+            json.dumps(snapshot, ensure_ascii=False, indent=2, default=self._json_value),
+            encoding="utf-8",
+        )
+        temporary_path.replace(path)
+
+    def _restore_backup_if_database_empty(self, cursor) -> bool:
+        """Restaura o snapshot quando o banco acabou de ser criado ou esta vazio."""
+        path = self._backup_path()
+        if not path.exists():
+            return False
+
+        counts = {}
+        for table in ("usuarios", "produtos", "movimentacoes"):
+            cursor.execute(f"SELECT COUNT(*) FROM `{table}`")
+            counts[table] = int(cursor.fetchone()[0])
+
+        # Um banco recem-criado tambem pode ter apenas o admin padrao. Nesse caso,
+        # produtos e historico vazios indicam que podemos recuperar o snapshot sem
+        # misturar os IDs da instalacao nova com os dados que serao restaurados.
+        if counts["produtos"] != 0 or counts["movimentacoes"] != 0:
+            return False
+        cursor.execute("SELECT id, usuario FROM usuarios")
+        existing_users = cursor.fetchall()
+        if existing_users and not (
+            len(existing_users) == 1 and str(existing_users[0][1]).casefold() == "admin"
+        ):
+            return False
+
+        # Valida antes de apagar o usuario inicial, para nunca perder dados por um
+        # arquivo de backup incompleto ou corrompido.
+        tables = self._read_backup()["tables"]
+        if existing_users:
+            cursor.execute("DELETE FROM usuarios WHERE id = %s", (existing_users[0][0],))
+
+        # A ordem respeita os relacionamentos: usuarios, produtos e movimentacoes.
+        for user in tables["usuarios"]:
+            cursor.execute(
+                "INSERT INTO usuarios (id, usuario, senha) VALUES (%s, %s, %s)",
+                (user["id"], user["usuario"], user["senha"]),
+            )
+
+        for product in tables["produtos"]:
+            cursor.execute(
+                """INSERT INTO produtos
+                   (id, usuario_id, nome, categoria, quantidade, preco, estoque_minimo)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    product["id"], product["usuario_id"], product["nome"],
+                    product["categoria"], product["quantidade"], product["preco"],
+                    product["estoque_minimo"],
+                ),
+            )
+
+        for movement in tables["movimentacoes"]:
+            recorded_at = movement.get("data_hora")
+            if isinstance(recorded_at, str):
+                recorded_at = datetime.fromisoformat(recorded_at)
+            if recorded_at is None:
+                # Compatibilidade com snapshots antigos sem a coluna de data/hora.
+                recorded_at = datetime.now()
+            cursor.execute(
+                """INSERT INTO movimentacoes
+                   (id, usuario_id, produto_id, produto_nome, tipo, quantidade,
+                    preco_unitario, data_hora)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                (
+                    movement["id"], movement["usuario_id"], movement.get("produto_id"),
+                    movement.get("produto_nome") or "Produto removido", movement["tipo"],
+                    movement["quantidade"], movement.get("preco_unitario"), recorded_at,
+                ),
+            )
+        return True
+
     def _require_user_id(self) -> int:
         if self.current_user_id is None:
             raise RuntimeError("Nenhum usuario autenticado para acessar os dados.")
@@ -73,6 +219,9 @@ class DatabaseManager:
         conn = None
         cursor = None
         database_name = self.config.get("database", "estoque_db")
+        backup_existed = self._backup_path().exists()
+        backup_was_valid = self._backup_is_valid() if backup_existed else False
+        restored_from_backup = False
 
         try:
             conn = self.connect(include_database=False)
@@ -168,6 +317,14 @@ class DatabaseManager:
                 cursor.execute(
                     "ALTER TABLE movimentacoes ADD COLUMN preco_unitario DECIMAL(10,2) NULL DEFAULT NULL AFTER quantidade"
                 )
+            if not self._column_exists(cursor, database_name, "movimentacoes", "data_hora"):
+                cursor.execute(
+                    "ALTER TABLE movimentacoes ADD COLUMN data_hora DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"
+                )
+
+            # Se as tres tabelas estiverem vazias, tenta recuperar todos os dados
+            # e datas do snapshot antes de criar a conta e os exemplos iniciais.
+            restored_from_backup = self._restore_backup_if_database_empty(cursor)
 
             # Mantem o login inicial de compatibilidade e nao substitui contas existentes.
             cursor.execute("SELECT COUNT(*) FROM usuarios")
@@ -217,7 +374,7 @@ class DatabaseManager:
 
             # Semeia exemplos somente ao criar pela primeira vez a tabela produtos.
             # Os exemplos pertencem ao admin, nunca a cada novo usuario cadastrado.
-            if not products_table_existed:
+            if not products_table_existed and not restored_from_backup:
                 sample_products = [
                     (legacy_owner_id, "Teclado", "Perifericos", 12, 80.00, 5),
                     (legacy_owner_id, "Mouse", "Perifericos", 4, 45.00, 5),
@@ -241,10 +398,10 @@ class DatabaseManager:
                     cursor.execute(
                         """
                         INSERT INTO movimentacoes
-                            (usuario_id, produto_id, produto_nome, tipo, quantidade, preco_unitario)
-                        VALUES (%s, %s, %s, 'ENTRADA', %s, %s)
+                            (usuario_id, produto_id, produto_nome, tipo, quantidade, preco_unitario, data_hora)
+                        VALUES (%s, %s, %s, 'ENTRADA', %s, %s, %s)
                         """,
-                        (legacy_owner_id, product_id, name, quantity, price),
+                        (legacy_owner_id, product_id, name, quantity, price, datetime.now()),
                     )
 
             # Remove a restricao antiga que proibia dois usuarios distintos de ter
@@ -320,6 +477,11 @@ class DatabaseManager:
                 )
 
             conn.commit()
+            # Um backup valido existente e mantido para nao sobrescrever uma copia
+            # de recuperacao com um banco que possa estar incompleto. Operacoes novas
+            # atualizam o snapshot logo depois de cada commit.
+            if not backup_was_valid or restored_from_backup:
+                self._write_backup()
         except Error as error:
             if conn is not None:
                 conn.rollback()
@@ -379,6 +541,7 @@ class DatabaseManager:
                 (username, self.hash_password(password)),
             )
             conn.commit()
+            self._write_backup()
         except IntegrityError as error:
             conn.rollback()
             raise ValueError("Esse usuario ja esta cadastrado.") from error
@@ -405,6 +568,7 @@ class DatabaseManager:
                     (self.hash_password(password), row[0]),
                 )
                 conn.commit()
+                self._write_backup()
             return {"id": int(row[0]), "usuario": row[1]}
         finally:
             cursor.close()
@@ -478,12 +642,13 @@ class DatabaseManager:
                 cursor.execute(
                     """
                     INSERT INTO movimentacoes
-                        (usuario_id, produto_id, produto_nome, tipo, quantidade)
-                    VALUES (%s, %s, %s, 'ENTRADA', %s)
+                        (usuario_id, produto_id, produto_nome, tipo, quantidade, data_hora)
+                    VALUES (%s, %s, %s, 'ENTRADA', %s, %s)
                     """,
-                    (user_id, product_id, nome, quantidade),
+                    (user_id, product_id, nome, quantidade, datetime.now()),
                 )
             conn.commit()
+            self._write_backup()
         except IntegrityError as error:
             conn.rollback()
             if getattr(error, "errno", None) == 1062:
@@ -540,12 +705,13 @@ class DatabaseManager:
             cursor.execute(
                 """
                 INSERT INTO movimentacoes
-                    (usuario_id, produto_id, produto_nome, tipo, quantidade)
-                VALUES (%s, %s, %s, 'ENTRADA', %s)
+                    (usuario_id, produto_id, produto_nome, tipo, quantidade, data_hora)
+                VALUES (%s, %s, %s, 'ENTRADA', %s, %s)
                 """,
-                (user_id, product_id, product["nome"], int(amount)),
+                (user_id, product_id, product["nome"], int(amount), datetime.now()),
             )
             conn.commit()
+            self._write_backup()
         except Exception:
             conn.rollback()
             raise
@@ -586,12 +752,13 @@ class DatabaseManager:
             cursor.execute(
                 """
                 INSERT INTO movimentacoes
-                    (usuario_id, produto_id, produto_nome, tipo, quantidade, preco_unitario)
-                VALUES (%s, %s, %s, 'SAIDA', %s, %s)
+                    (usuario_id, produto_id, produto_nome, tipo, quantidade, preco_unitario, data_hora)
+                VALUES (%s, %s, %s, 'SAIDA', %s, %s, %s)
                 """,
-                (user_id, product_id, product["nome"], amount, product["preco"]),
+                (user_id, product_id, product["nome"], amount, product["preco"], datetime.now()),
             )
             conn.commit()
+            self._write_backup()
         except Exception:
             conn.rollback()
             raise
@@ -659,12 +826,13 @@ class DatabaseManager:
                 cursor.execute(
                     """
                     INSERT INTO movimentacoes
-                        (usuario_id, produto_id, produto_nome, tipo, quantidade)
-                    VALUES (%s, %s, %s, %s, %s)
+                        (usuario_id, produto_id, produto_nome, tipo, quantidade, data_hora)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                     """,
-                    (user_id, product_id, nome, movement_type, abs(difference)),
+                    (user_id, product_id, nome, movement_type, abs(difference), datetime.now()),
                 )
             conn.commit()
+            self._write_backup()
         except IntegrityError as error:
             conn.rollback()
             if getattr(error, "errno", None) == 1062:
@@ -695,16 +863,17 @@ class DatabaseManager:
             cursor.execute(
                 """
                 INSERT INTO movimentacoes
-                    (usuario_id, produto_id, produto_nome, tipo, quantidade)
-                VALUES (%s, %s, %s, 'SAIDA', %s)
+                    (usuario_id, produto_id, produto_nome, tipo, quantidade, data_hora)
+                VALUES (%s, %s, %s, 'SAIDA', %s, %s)
                 """,
-                (user_id, product_id, product["nome"], int(product["quantidade"])),
+                (user_id, product_id, product["nome"], int(product["quantidade"]), datetime.now()),
             )
             cursor.execute(
                 "DELETE FROM produtos WHERE id = %s AND usuario_id = %s",
                 (product_id, user_id),
             )
             conn.commit()
+            self._write_backup()
         except Exception:
             conn.rollback()
             raise
@@ -734,22 +903,28 @@ class DatabaseManager:
             cursor.close()
             conn.close()
 
-    def dashboard_stats(self):
+    def dashboard_stats(self, category=None):
+        """Retorna indicadores gerais ou filtrados por categoria."""
         user_id = self._require_user_id()
         conn = self.connect()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT COUNT(*) FROM produtos WHERE usuario_id = %s", (user_id,))
+            where = "usuario_id = %s"
+            params = [user_id]
+            if category:
+                where += " AND categoria = %s"
+                params.append(category)
+
+            cursor.execute(f"SELECT COUNT(*) FROM produtos WHERE {where}", tuple(params))
             total_products = cursor.fetchone()[0]
             cursor.execute(
-                "SELECT COALESCE(SUM(quantidade), 0) FROM produtos WHERE usuario_id = %s",
-                (user_id,),
+                f"SELECT COALESCE(SUM(quantidade), 0) FROM produtos WHERE {where}",
+                tuple(params),
             )
             total_units = cursor.fetchone()[0]
             cursor.execute(
-                """SELECT COUNT(*) FROM produtos
-                WHERE usuario_id = %s AND quantidade <= estoque_minimo""",
-                (user_id,),
+                f"SELECT COUNT(*) FROM produtos WHERE {where} AND quantidade <= estoque_minimo",
+                tuple(params),
             )
             low_stock = cursor.fetchone()[0]
             return total_products, total_units, low_stock
@@ -757,40 +932,53 @@ class DatabaseManager:
             cursor.close()
             conn.close()
 
-
-    def dashboard_movement_totals(self, limit=8):
-        """Retorna entradas e saidas acumuladas por nome historico de produto."""
+    def dashboard_movement_totals(self, limit=8, category=None):
+        """Retorna entradas e saidas por produto, opcionalmente filtradas por categoria atual."""
         user_id = self._require_user_id()
         conn = self.connect()
         cursor = conn.cursor(dictionary=True)
         try:
+            category_clause = ""
+            params = [user_id]
+            if category:
+                # Quando uma categoria especifica é selecionada, considera apenas
+                # movimentações de produtos atualmente pertencentes a ela.
+                category_clause = " AND p.categoria = %s"
+                params.append(category)
+            params.append(int(limit))
             cursor.execute(
-                """
+                f"""
                 SELECT COALESCE(p.nome, m.produto_nome) AS produto,
                        COALESCE(SUM(CASE WHEN m.tipo = 'ENTRADA' THEN m.quantidade ELSE 0 END), 0) AS entradas,
                        COALESCE(SUM(CASE WHEN m.tipo = 'SAIDA' THEN m.quantidade ELSE 0 END), 0) AS saidas
                 FROM movimentacoes m
                 LEFT JOIN produtos p ON p.id = m.produto_id AND p.usuario_id = m.usuario_id
-                WHERE m.usuario_id = %s
+                WHERE m.usuario_id = %s {category_clause}
                 GROUP BY COALESCE(p.nome, m.produto_nome)
                 ORDER BY saidas DESC, entradas DESC, produto ASC
                 LIMIT %s
                 """,
-                (user_id, int(limit)),
+                tuple(params),
             )
             return cursor.fetchall()
         finally:
             cursor.close()
             conn.close()
 
-    def dashboard_gross_revenue(self, limit=8):
-        """Calcula valor bruto das saidas que guardam o preco unitario da retirada."""
+    def dashboard_gross_revenue(self, limit=8, category=None):
+        """Calcula valor bruto das saidas, opcionalmente filtradas por categoria."""
         user_id = self._require_user_id()
         conn = self.connect()
         cursor = conn.cursor(dictionary=True)
         try:
+            category_clause = ""
+            params = [user_id]
+            if category:
+                category_clause = " AND p.categoria = %s"
+                params.append(category)
+            params.append(int(limit))
             cursor.execute(
-                """
+                f"""
                 SELECT COALESCE(p.nome, m.produto_nome) AS produto,
                        COALESCE(SUM(m.quantidade * m.preco_unitario), 0) AS receita_bruta
                 FROM movimentacoes m
@@ -798,11 +986,12 @@ class DatabaseManager:
                 WHERE m.usuario_id = %s
                   AND m.tipo = 'SAIDA'
                   AND m.preco_unitario IS NOT NULL
+                  {category_clause}
                 GROUP BY COALESCE(p.nome, m.produto_nome)
                 ORDER BY receita_bruta DESC, produto ASC
                 LIMIT %s
                 """,
-                (user_id, int(limit)),
+                tuple(params),
             )
             return cursor.fetchall()
         finally:
