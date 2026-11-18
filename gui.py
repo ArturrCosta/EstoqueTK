@@ -710,6 +710,7 @@ class MainWindow:
                 preco = Decimal(preco_text.replace(",", "."))
                 minimo = parse_integer_input(minimo_text, "O estoque mínimo")
 
+<<<<<<< HEAD
                 if not preco.is_finite():
                     raise ValueError("Informe um preço válido.")
                 if quantidade < 0 or minimo < 0 or preco < 0:
@@ -718,6 +719,10 @@ class MainWindow:
                     raise ValueError("Quantidade e estoque mínimo devem ser no máximo 2.000.000.000.")
                 if preco > Decimal("99999999.99"):
                     raise ValueError("O preço deve ser no máximo R$ 99.999.999,99.")
+=======
+                if quantidade < 0 or minimo < 0 or preco < 0:
+                    raise ValueError("Os valores nao podem ser negativos.")
+>>>>>>> 2c6f8ed39e2fc2dc4afc98a800521359fad39592
 
                 if self.database.product_name_exists(
                     nome, product["id"] if product else None

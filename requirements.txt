@@ -1,3 +1,6 @@
 mysql-connector-python
 matplotlib
+<<<<<<< HEAD
 reportlab
+=======
+>>>>>>> 2c6f8ed39e2fc2dc4afc98a800521359fad39592

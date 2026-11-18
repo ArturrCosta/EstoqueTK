@@ -1,0 +1,38 @@
+27/10/2026 13:02:30 - ERROR - Erro ao inicializar o banco: 2003 (HY000): Can't connect to MySQL server on 'localhost:3306' (10061)
+Traceback (most recent call last):
+  File "C:\Users\artur\EstoqueTK\.venv\Lib\site-packages\mysql\connector\connection_cext.py", line 354, in _open_connection
+    self._cmysql.connect(**cnx_kwargs)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^
+_mysql_connector.MySQLInterfaceError: Can't connect to MySQL server on 'localhost:3306' (10061)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "c:\Users\artur\EstoqueTK\database.py", line 78, in initialize_database
+    conn = self.connect(include_database=False)
+  File "c:\Users\artur\EstoqueTK\database.py", line 34, in connect
+    return mysql.connector.connect(**config)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\artur\EstoqueTK\.venv\Lib\site-packages\mysql\connector\pooling.py", line 322, in connect
+    return CMySQLConnection(*args, **kwargs)
+  File "C:\Users\artur\EstoqueTK\.venv\Lib\site-packages\mysql\connector\connection_cext.py", line 142, in __init__
+    self.connect(**kwargs)
+    ~~~~~~~~~~~~^^^^^^^^^^
+  File "C:\Users\artur\EstoqueTK\.venv\Lib\site-packages\mysql\connector\abstracts.py", line 1604, in connect
+    self._open_connection()
+    ~~~~~~~~~~~~~~~~~~~~~^^
+  File "C:\Users\artur\EstoqueTK\.venv\Lib\site-packages\mysql\connector\connection_cext.py", line 360, in _open_connection
+    raise get_mysql_exception(
+        err.errno, msg=err.msg, sqlstate=err.sqlstate
+    ) from err
+mysql.connector.errors.DatabaseError: 2003 (HY000): Can't connect to MySQL server on 'localhost:3306' (10061)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "c:\Users\artur\EstoqueTK\main.py", line 16, in main
+    database.initialize_database()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "c:\Users\artur\EstoqueTK\database.py", line 326, in initialize_database
+    raise RuntimeError(f"Erro ao inicializar o banco: {error}") from error
+RuntimeError: Erro ao inicializar o banco: 2003 (HY000): Can't connect to MySQL server on 'localhost:3306' (10061)
