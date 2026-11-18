@@ -1,0 +1,87 @@
+UML SIMPLIFICADO - STOCKFLOW
+
+DatabaseManager
+- config
++ connect()
++ initialize_database()
++ authenticate_user()
++ verify_user()
++ set_current_user()
++ clear_current_user()
++ create_user()
++ hash_password()
++ list_products()
++ get_product()
++ create_product()
++ update_product()
++ delete_product()
++ list_categories()
++ list_movements()
++ dashboard_stats()
+
+LoginWindow
+- root
+- database
++ build()
++ login()
++ open_registration()
+
+MainWindow
+- root
+- database
++ build_shell()
++ show_dashboard()
++ show_products()
++ show_movements()
++ logout()
++ open_product_form()
++ edit_selected_product()
++ delete_selected_product()
++ close()
+
+Logger
++ configurar()
++ registrar()
+
+RELACIONAMENTOS
+
+main.py -> DatabaseManager
+main.py -> LoginWindow
+LoginWindow -> DatabaseManager
+LoginWindow -> Logger
+MainWindow -> DatabaseManager
+MainWindow -> Logger
+DatabaseManager -> MySQL
+
+BANCO
+
+usuarios
+  id (PK)
+  usuario (UNIQUE)
+  senha (hash)
+
+produtos
+  id (PK)
+  usuario_id (FK -> usuarios.id)
+  nome
+  categoria
+  quantidade
+  preco
+  estoque_minimo
+  UNIQUE (usuario_id, nome)
+
+movimentacoes
+  id (PK)
+  usuario_id (FK -> usuarios.id)
+  produto_id (FK -> produtos.id, pode ser NULL apos exclusao)
+  produto_nome
+  tipo
+  quantidade
+  data_hora
+
+ISOLAMENTO DE DADOS
+
+Cada produto e cada movimentacao tem um usuario_id. O DatabaseManager guarda
+current_user_id apos login e filtra as consultas por esse id. Dados antigos
+sem proprietario sao migrados para o admin para preservar o estoque existente.
+Novas contas comecam sem produtos e sem historico proprio.
